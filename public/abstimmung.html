@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="robots" content="noindex, nofollow"/>
+<title>Wo geht deine Zeit hin? · KI ist Chefsache</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>⏱️</text></svg>"/>
+<style>
+  :root{
+    --accent:#ad8053; --accent-deep:#8a6440;
+    --ink:#2e2b29; --ink-soft:#595550; --line:#e6ded3;
+    --bg:#faf8f5; --sand:#f3ece3; --tuerkis:#dde8e5;
+    --head:"Montserrat","Segoe UI",Helvetica,Arial,sans-serif;
+    --body:"Source Sans 3","Segoe UI",Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100dvh;background:var(--sand);color:var(--ink);
+       font-family:var(--body);font-size:17px;line-height:1.5;
+       padding:24px 18px calc(28px + env(safe-area-inset-bottom))}
+  .wrap{max-width:520px;margin:0 auto}
+  .eyebrow{font-family:var(--head);font-weight:700;font-size:12px;letter-spacing:.14em;
+           text-transform:uppercase;color:var(--accent);margin-bottom:10px}
+  h1{font-family:var(--head);font-weight:900;font-size:clamp(26px,7vw,34px);line-height:1.15;margin:0 0 10px}
+  .sub{color:var(--ink-soft);margin:0 0 24px;font-size:16px}
+
+  /* --- Abstimmen --- */
+  .option{display:block;width:100%;text-align:left;background:#fff;border:2px solid var(--line);
+          border-radius:14px;padding:16px 18px;margin-bottom:11px;font-family:var(--body);
+          font-size:17px;line-height:1.35;color:var(--ink);cursor:pointer}
+  .option:hover{border-color:var(--accent)}
+  .option:active{transform:scale(.99)}
+
+  /* --- Ergebnis --- */
+  .zeile{background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px 15px;margin-bottom:10px}
+  .zeile.meine{border-color:var(--accent);border-width:2px}
+  .kopfzeile{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:8px}
+  .kopfzeile .was{font-size:16px;line-height:1.3}
+  .kopfzeile .zahl{font-family:var(--head);font-weight:800;font-size:16px;white-space:nowrap;color:var(--accent)}
+  .balken{height:9px;background:var(--sand);border-radius:99px;overflow:hidden}
+  .balken i{display:block;height:100%;background:var(--accent);border-radius:99px;
+            width:0;transition:width .5s ease}
+  .zeile.fuehrt .balken i{background:var(--ink)}
+  .zeile.fuehrt .kopfzeile .zahl{color:var(--ink)}
+  .danke{background:var(--tuerkis);border-radius:14px;padding:16px 18px;margin:0 0 20px}
+  .danke strong{font-family:var(--head)}
+  .gesamt{color:var(--ink-soft);font-size:15px;text-align:center;margin:18px 0 0}
+  .fuss{color:var(--ink-soft);font-size:14px;text-align:center;margin-top:26px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">KI ist Chefsache · 02.09.2026</div>
+  <h1>Wo geht deine Zeit hin?</h1>
+  <p class="sub" id="sub">Was frisst bei dir in der Woche die meiste Zeit? Wähl das aus, was am ehesten passt – der größte Zeitfresser aus dieser Runde wird gleich unser Live-Beispiel.</p>
+
+  <div id="abstimmen"></div>
+
+  <div id="ergebnis" hidden>
+    <div class="danke" id="danke"><strong>Danke!</strong> Hier ist der Zwischenstand – er aktualisiert sich von selbst.</div>
+    <div id="balken"></div>
+    <p class="gesamt" id="gesamt"></p>
+  </div>
+
+  <p class="fuss">Stefanie Sonntag &amp; Tim Schmitz</p>
+</div>
+
+<script>
+"use strict";
+var MEINE = null;
+var params = new URLSearchParams(location.search);
+var NUR_ERGEBNIS = params.get("ansicht") === "ergebnis";
+
+function el(id){ return document.getElementById(id); }
+function sicher(t){ var d=document.createElement("div"); d.textContent=t; return d.innerHTML; }
+
+function zeigeOptionen(optionen){
+  el("abstimmen").innerHTML = optionen.map(function(o,i){
+    return '<button class="option" data-i="'+i+'">'+sicher(o)+'</button>';
+  }).join("");
+}
+
+function zeigeErgebnis(d){
+  el("abstimmen").hidden = true;
+  el("ergebnis").hidden = false;
+  var hoechste = Math.max.apply(null, d.stimmen);
+  el("balken").innerHTML = d.optionen.map(function(o,i){
+    var n = d.stimmen[i];
+    var anteil = d.gesamt ? Math.round(n / d.gesamt * 100) : 0;
+    var fuehrt = n === hoechste && n > 0;
+    return '<div class="zeile'+(fuehrt?" fuehrt":"")+(i===MEINE?" meine":"")+'">'
+      + '<div class="kopfzeile"><span class="was">'+sicher(o)+'</span>'
+      + '<span class="zahl">'+anteil+'&thinsp;% · '+n+'</span></div>'
+      + '<div class="balken"><i style="width:'+anteil+'%"></i></div></div>';
+  }).join("");
+  el("gesamt").textContent = d.gesamt === 1 ? "1 Stimme" : d.gesamt + " Stimmen";
+}
+
+async function hole(){
+  var r = await fetch("/api/vote");
+  return r.json();
+}
+
+document.addEventListener("click", async function(e){
+  var b = e.target.closest(".option");
+  if (!b) return;
+  MEINE = Number(b.dataset.i);
+  document.querySelectorAll(".option").forEach(function(x){ x.disabled = true; });
+  try {
+    var r = await fetch("/api/vote", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ option: MEINE })
+    });
+    var d = await r.json();
+    if (d.schonAbgestimmt) el("danke").innerHTML = "<strong>Du hast schon abgestimmt.</strong> Hier ist der Zwischenstand.";
+    el("sub").textContent = "Der größte Zeitfresser aus dieser Runde wird gleich unser Live-Beispiel.";
+    zeigeErgebnis(d);
+  } catch (err) {
+    document.querySelectorAll(".option").forEach(function(x){ x.disabled = false; });
+    el("sub").textContent = "Das hat nicht geklappt – probier es bitte noch einmal.";
+  }
+});
+
+(async function(){
+  var d = await hole();
+  if (NUR_ERGEBNIS) {
+    // Ansicht für die Bildschirmfreigabe: kein Abstimmen, nur der Stand.
+    el("sub").textContent = "Live-Ergebnis aus dem Raum.";
+    el("danke").hidden = true;
+    zeigeErgebnis(d);
+  } else {
+    zeigeOptionen(d.optionen);
+    // Wer schon abgestimmt hat, sieht direkt das Ergebnis.
+    if (document.cookie.indexOf("abgestimmt=1") !== -1) {
+      el("danke").innerHTML = "<strong>Du hast schon abgestimmt.</strong> Hier ist der Zwischenstand.";
+      zeigeErgebnis(d);
+    }
+  }
+  // Zwischenstand mitlaufen lassen, solange das Ergebnis zu sehen ist.
+  setInterval(async function(){
+    if (el("ergebnis").hidden) return;
+    zeigeErgebnis(await hole());
+  }, 4000);
+})();
+</script>
+</body>
+</html>

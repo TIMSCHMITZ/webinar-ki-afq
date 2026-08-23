@@ -108,6 +108,28 @@ function speichereAenderungen(obj) {
 // Nur einfache Feldpfade zulassen — kein __proto__, keine Tiefe ohne Ende.
 const PFAD_OK = /^[a-zA-Z]{1,20}(\.(0|[1-9][0-9]?)|\.[a-zA-Z]{1,20}){0,3}$/;
 
+// --- Live-Abstimmung (Folie 9: „Wo geht deine Zeit hin?") --------------
+// Oeffentlich erreichbar unter /abstimmung — die Teilnehmer scannen im Webinar
+// einen QR-Code und haben kein Passwort. Der Rest der Anwendung bleibt zu.
+const ABSTIMMUNG = join(DATEN, "abstimmung.json");
+const OPTIONEN = [
+  "Neue Leute einarbeiten",
+  "Immer wieder dieselben Fragen beantworten",
+  "Nacharbeiten, was schiefgelaufen ist",
+  "Absprachen, Rückfragen, Zwischenrufe",
+  "Angebote, Berichte, Dokumentation",
+  "Einspringen, wo gerade jemand fehlt",
+];
+function ladeStimmen() {
+  if (!existsSync(ABSTIMMUNG)) return {};
+  try { return JSON.parse(readFileSync(ABSTIMMUNG, "utf8")); } catch { return {}; }
+}
+function speichereStimmen(obj) {
+  const tmp = ABSTIMMUNG + ".tmp";
+  writeFileSync(tmp, JSON.stringify(obj, null, 2));
+  renameSync(tmp, ABSTIMMUNG);
+}
+
 // --- HTTP-Hilfen -------------------------------------------------------
 const TYPEN = {
   ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -144,6 +166,45 @@ const server = createServer(async (req, res) => {
     const html = readFileSync(join(OEFFENTLICH, "index.html"));
     res.writeHead(200, { "content-type": TYPEN[".html"], "cache-control": "no-cache" });
     return res.end(html);
+  }
+
+  // --- Abstimmung: bewusst OHNE Anmeldung, die Teilnehmer haben kein Passwort ---
+  if (pfad === "/abstimmung" || pfad === "/abstimmung.html") {
+    const html = readFileSync(join(OEFFENTLICH, "abstimmung.html"));
+    res.writeHead(200, { "content-type": TYPEN[".html"], "cache-control": "no-cache" });
+    return res.end(html);
+  }
+  if (pfad === "/api/vote") {
+    const stimmen = ladeStimmen();
+    const ergebnis = () => ({
+      optionen: OPTIONEN,
+      stimmen: OPTIONEN.map((_, i) => stimmen[i] || 0),
+      gesamt: OPTIONEN.reduce((n, _, i) => n + (stimmen[i] || 0), 0),
+    });
+    if (req.method === "GET") return json(res, 200, ergebnis());
+    if (req.method === "POST") {
+      const { option } = await koerperLesen(req, 4096);
+      const i = Number(option);
+      if (!Number.isInteger(i) || i < 0 || i >= OPTIONEN.length) {
+        return json(res, 400, { fehler: "Diese Antwort gibt es nicht." });
+      }
+      // Ein Cookie gegen versehentliches Doppeltippen. Wer unbedingt will, kommt
+      // daran vorbei — fuer eine Stimmungsabfrage im Webinar reicht das.
+      const schon = (req.headers.cookie || "").includes("abgestimmt=1");
+      if (!schon) {
+        stimmen[i] = (stimmen[i] || 0) + 1;
+        speichereStimmen(stimmen);
+      }
+      return json(res, 200, { ...ergebnis(), schonAbgestimmt: schon }, {
+        "set-cookie": "abgestimmt=1; Path=/; Max-Age=43200; SameSite=Lax; Secure",
+      });
+    }
+    // Zuruecksetzen nur angemeldet — vor der Generalprobe und vor dem Webinar.
+    if (req.method === "DELETE") {
+      if (!s) return json(res, 401, { fehler: "nicht angemeldet" });
+      speichereStimmen({});
+      return json(res, 200, { zurueckgesetzt: true });
+    }
   }
 
   // --- Anmeldung ---
