@@ -76,6 +76,7 @@
   .feldwerkzeug{display:flex;gap:12px;margin-top:5px}
   .feldwerkzeug button{background:none;color:var(--ink-soft);border:0;padding:0;font-size:12.5px;
        font-family:var(--body);text-decoration:underline;cursor:pointer}
+  .feldwerkzeug .status{font-size:12.5px;color:var(--accent);min-width:120px}
   .feldwerkzeug button:hover{color:var(--ink)}
   .texthinweis{background:var(--tuerkis);border-radius:10px;padding:11px 13px;font-size:13.5px;
        line-height:1.45;color:var(--ink);margin:0 0 16px}
@@ -228,6 +229,17 @@ const BRUECKE = `
     neuRendern: function(){
       deck.innerHTML = S.map(render).join("") + '<div id="bar"></div>';
       slides = [].slice.call(deck.querySelectorAll(".slide"));
+      show(cur);
+    },
+    // Nur eine Folie neu zeichnen — schnell genug, um bei jedem Tastendruck
+    // zu laufen. Alle 62 zu rendern waere dafuer zu traege.
+    folieNeu: function(i){
+      if (!slides[i]) return;
+      var huelle = document.createElement("div");
+      huelle.innerHTML = render(S[i], i);
+      var neu = huelle.firstElementChild;
+      slides[i].parentNode.replaceChild(neu, slides[i]);
+      slides[i] = neu;
       show(cur);
     }
   };
@@ -486,7 +498,8 @@ function zeichneText() {
   const geaendert = AENDERUNGEN[AKTUELLE_FOLIE] || {};
   bereich.innerHTML =
     '<p class="texthinweis">Du änderst hier Folie ' + AKTUELLE_FOLIE +
-    '. Die Änderung ist sofort für beide sichtbar und lässt sich einzeln zurücknehmen.</p>' +
+    '. Tipp einfach los – die Folie zieht sofort mit, gespeichert wird von selbst. ' +
+    'Jede Änderung lässt sich einzeln zurücknehmen.</p>' +
     felder.map((f) => {
       const g = geaendert[f.pfad];
       return `<div class="feldgruppe" data-pfad="${f.pfad}">
@@ -496,44 +509,62 @@ function zeichneText() {
         </label>
         <textarea rows="2" class="${g ? "dirty" : ""}">${sicher(f.wert)}</textarea>
         <div class="feldwerkzeug">
-          <button data-tu="speichern">speichern</button>
+          <span class="status"></span>
           ${g ? '<button data-tu="zuruecksetzen">Original wiederherstellen</button>' : ""}
         </div>
       </div>`;
     }).join("");
 }
 
+// Tippen: die Folie zieht sofort mit, gespeichert wird kurz danach von selbst.
+const SPEICHER_VERZOEGERUNG = 700;
+const wartend = new Map();
+
+$("textbereich").addEventListener("input", (e) => {
+  const feld = e.target.closest("textarea");
+  if (!feld) return;
+  const gruppe = feld.closest(".feldgruppe");
+  const pfad = gruppe.dataset.pfad;
+  const status = gruppe.querySelector(".status");
+
+  // 1. Sofort sichtbar machen — nur die eine Folie neu zeichnen.
+  const api = deckApi();
+  if (api) {
+    const folie = api.folien()[AKTUELLE_FOLIE - 1];
+    if (folie && setzeWert(folie, pfad, feld.value)) api.folieNeu(AKTUELLE_FOLIE - 1);
+  }
+  feld.classList.add("dirty");
+  status.textContent = "…";
+
+  // 2. Speichern, sobald die Tastatur kurz ruht.
+  clearTimeout(wartend.get(pfad));
+  wartend.set(pfad, setTimeout(async () => {
+    try {
+      const r = await fetch("/api/edits", {
+        method: "PUT", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ folie: AKTUELLE_FOLIE, feld: pfad, wert: feld.value }),
+      });
+      if (!r.ok) throw new Error(String(r.status));
+      status.textContent = "gespeichert ✓";
+      setTimeout(() => { if (status.textContent === "gespeichert ✓") status.textContent = ""; }, 2000);
+      await ladeAenderungen();
+    } catch {
+      status.textContent = "nicht gespeichert – Verbindung?";
+    }
+  }, SPEICHER_VERZOEGERUNG));
+});
+
 $("textbereich").addEventListener("click", async (e) => {
-  const btn = e.target.closest("button[data-tu]");
+  const btn = e.target.closest("button[data-tu='zuruecksetzen']");
   if (!btn) return;
   const gruppe = btn.closest(".feldgruppe");
-  const pfad = gruppe.dataset.pfad;
-  const feld = gruppe.querySelector("textarea");
-
-  if (btn.dataset.tu === "speichern") {
-    btn.textContent = "…";
-    const r = await fetch("/api/edits", {
-      method: "PUT", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ folie: AKTUELLE_FOLIE, feld: pfad, wert: feld.value }),
-    });
-    if (!r.ok) { btn.textContent = "ging nicht"; return; }
-    btn.textContent = "gespeichert ✓";
-    setTimeout(() => { btn.textContent = "speichern"; }, 1800);
-  } else {
-    // Zurücksetzen heißt: Auflage löschen und das Deck frisch aufbauen, damit
-    // der Originalwert wieder erscheint.
-    await fetch("/api/edits", {
-      method: "DELETE", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ folie: AKTUELLE_FOLIE, feld: pfad }),
-    });
-    await ladeAenderungen();
-    location.reload();
-    return;
-  }
-  await ladeAenderungen();
-  const api = deckApi();
-  if (api) { setzeWert(api.folien()[AKTUELLE_FOLIE - 1], pfad, feld.value); api.neuRendern(); }
-  zeichneText();
+  // Zurücksetzen heißt: Auflage löschen und das Deck frisch aufbauen, damit
+  // der Originalwert wieder erscheint.
+  await fetch("/api/edits", {
+    method: "DELETE", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ folie: AKTUELLE_FOLIE, feld: gruppe.dataset.pfad }),
+  });
+  location.reload();
 });
 
 $("abmelden").addEventListener("click", async () => {
