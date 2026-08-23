@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="robots" content="noindex, nofollow"/>
+<title>Folien-Arbeitsplatz · KI ist Chefsache</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🗂️</text></svg>"/>
+<style>
+  :root{
+    --accent:#ad8053; --accent-deep:#8a6440;
+    --ink:#2e2b29; --ink-soft:#595550; --line:#e6ded3;
+    --bg:#faf8f5; --sand:#f3ece3; --tuerkis:#dde8e5;
+    --head:"Montserrat","Helvetica Neue",Arial,sans-serif;
+    --body:"Source Sans 3","Helvetica Neue",Arial,sans-serif;
+  }
+  @font-face{font-family:"Montserrat";src:url("fonts/Montserrat-latin.woff2") format("woff2");font-weight:100 900;font-display:swap}
+  @font-face{font-family:"Source Sans 3";src:url("fonts/SourceSans3-latin.woff2") format("woff2");font-weight:100 900;font-display:swap}
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px}
+
+  /* ---------- Anmeldung ---------- */
+  #login{min-height:100dvh;display:grid;place-items:center;padding:24px;background:var(--sand)}
+  .karte{width:100%;max-width:420px;background:#fff;border:1px solid var(--line);border-radius:18px;padding:34px 30px;box-shadow:0 18px 50px rgba(46,43,41,.10)}
+  .karte h1{font-family:var(--head);font-weight:900;font-size:25px;line-height:1.2;margin:0 0 6px}
+  .karte p.sub{color:var(--ink-soft);margin:0 0 24px;font-size:15px;line-height:1.5}
+  label{display:block;font-family:var(--head);font-weight:700;font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-soft);margin:0 0 7px}
+  input,select,textarea{width:100%;font-family:var(--body);font-size:16px;color:var(--ink);background:#fff;border:2px solid var(--line);border-radius:10px;padding:12px 13px}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+  .feld{margin-bottom:17px}
+  button{font-family:var(--head);font-weight:700;font-size:15px;border:0;border-radius:10px;padding:13px 20px;background:var(--accent);color:#fff;cursor:pointer}
+  button:hover{background:var(--accent-deep)}
+  button.leer{background:#fff;color:var(--ink);border:2px solid var(--line)}
+  button.leer:hover{background:var(--sand)}
+  button:disabled{opacity:.55;cursor:default}
+  .fehler{color:#a8352a;font-size:14px;margin:12px 0 0;min-height:20px}
+
+  /* ---------- Arbeitsplatz ---------- */
+  #arbeit{display:none;height:100dvh;grid-template-columns:1fr 380px}
+  #arbeit.an{display:grid}
+  #buehne{position:relative;background:#111;min-width:0}
+  #deckframe{width:100%;height:100%;border:0;display:block;background:#111}
+  #laden{position:absolute;inset:0;display:grid;place-items:center;color:#e8e0d6;font-family:var(--head);font-size:15px;background:#111}
+
+  aside{display:flex;flex-direction:column;background:#fff;border-left:1px solid var(--line);min-width:0}
+  .kopf{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .kopf h2{font-family:var(--head);font-weight:800;font-size:16px;margin:0;flex:1;min-width:120px}
+  .wer{font-size:13px;color:var(--ink-soft)}
+  .schalter{display:flex;gap:6px;padding:12px 18px 0}
+  .schalter button{flex:1;padding:9px 6px;font-size:13px;background:var(--sand);color:var(--ink)}
+  .schalter button.aktiv{background:var(--ink);color:#fff}
+  #liste{flex:1;overflow-y:auto;padding:14px 18px 18px;display:flex;flex-direction:column;gap:11px}
+  .notiz{background:var(--sand);border:1px solid var(--line);border-radius:12px;padding:12px 13px}
+  .notiz.fremd{background:var(--tuerkis)}
+  .notiz.erledigt{opacity:.5}
+  .notiz.erledigt .text{text-decoration:line-through}
+  .meta{display:flex;align-items:baseline;gap:7px;font-size:12px;color:var(--ink-soft);margin-bottom:5px;flex-wrap:wrap}
+  .meta b{font-family:var(--head);font-size:13px;color:var(--ink)}
+  .sprung{cursor:pointer;color:var(--accent);text-decoration:underline;background:none;border:0;padding:0;font:inherit}
+  .text{font-size:15px;line-height:1.5;white-space:pre-wrap;word-break:break-word;margin:0}
+  .werkzeug{display:flex;gap:12px;margin-top:8px}
+  .werkzeug button{background:none;color:var(--ink-soft);border:0;padding:0;font-size:12.5px;font-family:var(--body);text-decoration:underline;cursor:pointer}
+  .werkzeug button:hover{color:var(--ink)}
+  .leerhinweis{color:var(--ink-soft);font-size:14.5px;line-height:1.55;text-align:center;padding:26px 8px}
+  .schreiben{border-top:1px solid var(--line);padding:14px 18px;background:var(--bg)}
+  .schreiben textarea{min-height:74px;resize:vertical;font-size:15px}
+  .schreiben .zeile{display:flex;align-items:center;gap:10px;margin-top:9px}
+  .schreiben .zeile span{flex:1;font-size:12.5px;color:var(--ink-soft)}
+  .stand{font-size:12px;color:var(--ink-soft);padding:0 18px 10px}
+
+  @media (max-width:900px){
+    #arbeit.an{grid-template-columns:1fr;grid-template-rows:52dvh 1fr}
+    aside{border-left:0;border-top:1px solid var(--line)}
+  }
+</style>
+</head>
+<body>
+
+<!-- ================= Anmeldung ================= -->
+<div id="login">
+  <form class="karte" id="loginform" autocomplete="off">
+    <h1>Folien „KI ist Chefsache"</h1>
+    <p class="sub">Webinar am 02.09.2026. Die Präsentation ist verschlüsselt — sie wird erst mit dem Passwort im Browser lesbar.</p>
+    <div class="feld">
+      <label for="name">Wer bist du?</label>
+      <select id="name" required>
+        <option value="Steffi">Steffi</option>
+        <option value="Tim">Tim</option>
+      </select>
+    </div>
+    <div class="feld">
+      <label for="pw">Passwort</label>
+      <input id="pw" type="password" required autocomplete="current-password"/>
+    </div>
+    <button type="submit" id="loginbtn" style="width:100%">Öffnen</button>
+    <p class="fehler" id="loginfehler"></p>
+  </form>
+</div>
+
+<!-- ================= Arbeitsplatz ================= -->
+<div id="arbeit">
+  <div id="buehne">
+    <div id="laden">Präsentation wird entschlüsselt …</div>
+    <!-- allow=fullscreen: sonst greift die f-Taste des Decks im Rahmen nicht. -->
+    <iframe id="deckframe" title="Präsentation" allow="fullscreen" hidden></iframe>
+  </div>
+
+  <aside>
+    <div class="kopf">
+      <h2 id="folietitel">Folie 1</h2>
+      <span class="wer" id="werbin"></span>
+      <button class="leer" id="abmelden" style="padding:7px 12px;font-size:12.5px">Abmelden</button>
+    </div>
+
+    <div class="schalter">
+      <button id="tabfolie" class="aktiv">Diese Folie</button>
+      <button id="taballe">Alle (<span id="anzahlalle">0</span>)</button>
+      <button id="taboffen">Offen (<span id="anzahloffen">0</span>)</button>
+    </div>
+
+    <div id="liste"></div>
+    <p class="stand" id="stand"></p>
+
+    <form class="schreiben" id="schreibform">
+      <textarea id="text" placeholder="Anmerkung zu dieser Folie … (Strg + Enter sendet)"></textarea>
+      <div class="zeile">
+        <span id="zielhinweis">wird an Folie 1 gehängt</span>
+        <button type="submit">Anmerken</button>
+      </div>
+    </form>
+  </aside>
+</div>
+
+<script>
+"use strict";
+
+/* ============ Anmeldung ============ */
+const $ = (id) => document.getElementById(id);
+let ICH = null, AKTUELLE_FOLIE = 1, PASSWORT = null;
+
+$("loginform").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = $("loginbtn"), fehler = $("loginfehler");
+  btn.disabled = true; fehler.textContent = "";
+  const passwort = $("pw").value, name = $("name").value;
+  try {
+    const r = await fetch("/api/login", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ passwort, name }),
+    });
+    const d = await r.json();
+    if (!r.ok) { fehler.textContent = d.fehler || "Anmeldung fehlgeschlagen."; btn.disabled = false; return; }
+    ICH = d.name; PASSWORT = passwort;
+    await starte();
+  } catch (err) {
+    fehler.textContent = "Verbindung fehlgeschlagen.";
+    btn.disabled = false;
+  }
+});
+
+// Bereits angemeldet? Dann nur noch das Passwort fuer die Entschluesselung holen —
+// der Schluessel liegt bewusst NIE auf dem Server, deshalb ist die Abfrage noetig.
+(async () => {
+  const r = await fetch("/api/session");
+  if (r.ok) {
+    const d = await r.json();
+    $("name").value = d.name;
+    $("pw").focus();
+    $("loginform").querySelector("p.sub").textContent =
+      "Du bist als " + d.name + " angemeldet. Zum Entschlüsseln der Folien wird das Passwort noch einmal gebraucht.";
+  }
+})();
+
+/* ============ Entschlüsselung (AES-256-GCM / PBKDF2) ============ */
+async function entschluessele(puffer, passwort) {
+  const roh = new Uint8Array(puffer);
+  const salt = roh.slice(0, 16), iv = roh.slice(16, 28), daten = roh.slice(28);
+  const basis = await crypto.subtle.importKey("raw", new TextEncoder().encode(passwort), "PBKDF2", false, ["deriveKey"]);
+  const schluessel = await crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations: 250000, hash: "SHA-256" },
+    basis, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
+  );
+  const klar = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, schluessel, daten);
+  return new TextDecoder().decode(klar);
+}
+
+// Meldet dem Arbeitsplatz, welche Folie gerade zu sehen ist, und nimmt Sprungbefehle
+// entgegen. Wird beim Entschlüsseln in das Deck eingesetzt — das Deck selbst bleibt
+// unverändert, es setzt ohnehin location.hash bei jedem Folienwechsel.
+const BRUECKE = `
+<script>
+(function(){
+  function melde(){
+    var nr = parseInt(location.hash.slice(1)) || 1;
+    parent.postMessage({ typ: "folie", nr: nr }, "*");
+  }
+  addEventListener("hashchange", melde);
+  addEventListener("message", function(e){
+    if (e.data && e.data.typ === "gehe") location.hash = e.data.nr;
+  });
+  addEventListener("load", melde);
+  setTimeout(melde, 120);
+})();
+<\/script>
+`;
+
+async function starte() {
+  $("login").style.display = "none";
+  $("arbeit").classList.add("an");
+  $("werbin").textContent = "als " + ICH;
+
+  try {
+    const r = await fetch("/deck.enc");
+    if (!r.ok) throw new Error("Deck nicht abrufbar (" + r.status + ")");
+    const html = await entschluessele(await r.arrayBuffer(), PASSWORT);
+    // <base> sorgt dafür, dass die relativen Pfade zu img/ und fonts/ auch im
+    // srcdoc-Rahmen greifen.
+    // <base> MUSS absolut sein: der Rahmen läuft unter einer blob:-Adresse, gegen die
+    // sich "img/flow-001.jpeg" nicht auflösen lässt. Das Deck entfernt fehlgeschlagene
+    // Bilder still per onerror — ohne diese Zeile fehlen sie also kommentarlos.
+    const mitBruecke = html
+      .replace(/<head(\s[^>]*)?>/i, (m) => m + `\n<base href="${location.origin}/">`)
+      .replace(/<\/body>/i, BRUECKE + "</body>");
+    // Blob statt srcdoc: gleiche Herkunft wie die Seite, dadurch funktionieren
+    // Vollbild und Tastatursteuerung des Decks zuverlässig. Der entschlüsselte
+    // Klartext bleibt so oder so nur im Arbeitsspeicher dieses Tabs.
+    const rahmen = $("deckframe");
+    rahmen.src = URL.createObjectURL(new Blob([mitBruecke], { type: "text/html" }));
+    rahmen.hidden = false;
+    $("laden").style.display = "none";
+  } catch (err) {
+    $("laden").innerHTML = "Die Folien ließen sich nicht entschlüsseln.<br>Stimmt das Passwort?";
+    console.error(err);
+    return;
+  }
+
+  await ladeNotizen();
+  setInterval(ladeNotizen, 5000); // einfacher Abgleich — bei zwei Personen reicht das
+}
+
+window.addEventListener("message", (e) => {
+  if (e.data && e.data.typ === "folie") {
+    AKTUELLE_FOLIE = e.data.nr;
+    $("folietitel").textContent = "Folie " + AKTUELLE_FOLIE;
+    $("zielhinweis").textContent = "wird an Folie " + AKTUELLE_FOLIE + " gehängt";
+    if (ANSICHT === "folie") zeichne();
+  }
+});
+
+/* ============ Anmerkungen ============ */
+let NOTIZEN = [], ANSICHT = "folie";
+
+async function ladeNotizen() {
+  try {
+    const r = await fetch("/api/notes");
+    if (!r.ok) return;
+    const d = await r.json();
+    NOTIZEN = d.notizen || [];
+    zeichne();
+  } catch {}
+}
+
+function zeitText(ts) {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return "gerade eben";
+  if (s < 3600) return "vor " + Math.floor(s / 60) + " Min.";
+  if (s < 86400) return "vor " + Math.floor(s / 3600) + " Std.";
+  return new Date(ts).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+}
+const sicher = (t) => { const d = document.createElement("div"); d.textContent = t; return d.innerHTML; };
+
+function zeichne() {
+  const offen = NOTIZEN.filter((n) => !n.erledigt);
+  $("anzahlalle").textContent = NOTIZEN.length;
+  $("anzahloffen").textContent = offen.length;
+
+  let zeigen = NOTIZEN;
+  if (ANSICHT === "folie") zeigen = NOTIZEN.filter((n) => n.folie === AKTUELLE_FOLIE);
+  if (ANSICHT === "offen") zeigen = offen;
+  zeigen = [...zeigen].sort((a, b) => (a.folie - b.folie) || (a.ts - b.ts));
+
+  const liste = $("liste");
+  if (!zeigen.length) {
+    liste.innerHTML = '<p class="leerhinweis">' +
+      (ANSICHT === "folie"
+        ? "Zu dieser Folie steht noch nichts.<br>Schreib unten die erste Anmerkung."
+        : ANSICHT === "offen" ? "Nichts Offenes — alles abgehakt." : "Noch keine Anmerkungen.") + "</p>";
+    return;
+  }
+  liste.innerHTML = zeigen.map((n) => `
+    <div class="notiz ${n.autor === ICH ? "" : "fremd"} ${n.erledigt ? "erledigt" : ""}" data-id="${n.id}">
+      <div class="meta">
+        <b>${sicher(n.autor)}</b>
+        <button class="sprung" data-nr="${n.folie}">Folie ${n.folie}</button>
+        <span>· ${zeitText(n.ts)}</span>
+      </div>
+      <p class="text">${sicher(n.text)}</p>
+      <div class="werkzeug">
+        <button data-tu="erledigt">${n.erledigt ? "wieder öffnen" : "erledigt"}</button>
+        <button data-tu="loeschen">löschen</button>
+      </div>
+    </div>`).join("");
+}
+
+$("liste").addEventListener("click", async (e) => {
+  const sprung = e.target.closest(".sprung");
+  if (sprung) {
+    const nr = Number(sprung.dataset.nr);
+    $("deckframe").contentWindow.postMessage({ typ: "gehe", nr }, "*");
+    return;
+  }
+  const btn = e.target.closest("[data-tu]");
+  if (!btn) return;
+  const id = btn.closest(".notiz").dataset.id;
+  const n = NOTIZEN.find((x) => x.id === id);
+  if (btn.dataset.tu === "loeschen") {
+    if (!confirm("Diese Anmerkung löschen?")) return;
+    await fetch("/api/notes/" + id, { method: "DELETE" });
+  } else {
+    await fetch("/api/notes/" + id, {
+      method: "PATCH", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ erledigt: !n.erledigt }),
+    });
+  }
+  ladeNotizen();
+});
+
+$("schreibform").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const feld = $("text"), text = feld.value.trim();
+  if (!text) return;
+  feld.value = "";
+  await fetch("/api/notes", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ folie: AKTUELLE_FOLIE, text }),
+  });
+  ladeNotizen();
+});
+$("text").addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") $("schreibform").requestSubmit();
+});
+
+for (const [id, wert] of [["tabfolie", "folie"], ["taballe", "alle"], ["taboffen", "offen"]]) {
+  $(id).addEventListener("click", () => {
+    ANSICHT = wert;
+    for (const x of ["tabfolie", "taballe", "taboffen"]) $(x).classList.toggle("aktiv", x === id);
+    zeichne();
+  });
+}
+
+$("abmelden").addEventListener("click", async () => {
+  await fetch("/api/logout", { method: "POST" });
+  location.reload();
+});
+</script>
+</body>
+</html>
