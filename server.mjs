@@ -120,13 +120,21 @@ const OPTIONEN = [
   "Angebote, Berichte, Dokumentation",
   "Einspringen, wo gerade jemand fehlt",
 ];
-function ladeStimmen() {
-  if (!existsSync(ABSTIMMUNG)) return {};
-  try { return JSON.parse(readFileSync(ABSTIMMUNG, "utf8")); } catch { return {}; }
+// Die Ablage haelt neben den Stimmen eine Rundennummer. Der Cookie eines
+// Teilnehmers traegt die Runde, in der er abgestimmt hat — beim Zuruecksetzen
+// zaehlt die Runde hoch und alle alten Cookies werden dadurch wertlos.
+// Ohne das koennte nach der Generalprobe niemand mehr abstimmen, der schon
+// einmal getippt hat: Die Zahlen waeren auf null, die Sperre aber geblieben.
+function ladeStand() {
+  if (!existsSync(ABSTIMMUNG)) return { runde: 1, stimmen: {} };
+  try {
+    const d = JSON.parse(readFileSync(ABSTIMMUNG, "utf8"));
+    return { runde: Number(d.runde) || 1, stimmen: d.stimmen || {} };
+  } catch { return { runde: 1, stimmen: {} }; }
 }
-function speichereStimmen(obj) {
+function speichereStand(stand) {
   const tmp = ABSTIMMUNG + ".tmp";
-  writeFileSync(tmp, JSON.stringify(obj, null, 2));
+  writeFileSync(tmp, JSON.stringify(stand, null, 2));
   renameSync(tmp, ABSTIMMUNG);
 }
 
@@ -175,11 +183,16 @@ const server = createServer(async (req, res) => {
     return res.end(html);
   }
   if (pfad === "/api/vote") {
-    const stimmen = ladeStimmen();
+    const stand = ladeStand();
+    const meineRunde = Number(
+      (/(?:^|;\s*)abgestimmt=(\d+)/.exec(req.headers.cookie || "") || [])[1]
+    );
     const ergebnis = () => ({
       optionen: OPTIONEN,
-      stimmen: OPTIONEN.map((_, i) => stimmen[i] || 0),
-      gesamt: OPTIONEN.reduce((n, _, i) => n + (stimmen[i] || 0), 0),
+      stimmen: OPTIONEN.map((_, i) => stand.stimmen[i] || 0),
+      gesamt: OPTIONEN.reduce((n, _, i) => n + (stand.stimmen[i] || 0), 0),
+      runde: stand.runde,
+      schonAbgestimmt: meineRunde === stand.runde,
     });
     if (req.method === "GET") return json(res, 200, ergebnis());
     if (req.method === "POST") {
@@ -188,22 +201,22 @@ const server = createServer(async (req, res) => {
       if (!Number.isInteger(i) || i < 0 || i >= OPTIONEN.length) {
         return json(res, 400, { fehler: "Diese Antwort gibt es nicht." });
       }
-      // Ein Cookie gegen versehentliches Doppeltippen. Wer unbedingt will, kommt
+      // Cookie gegen versehentliches Doppeltippen. Wer unbedingt will, kommt
       // daran vorbei — fuer eine Stimmungsabfrage im Webinar reicht das.
-      const schon = (req.headers.cookie || "").includes("abgestimmt=1");
+      const schon = meineRunde === stand.runde;
       if (!schon) {
-        stimmen[i] = (stimmen[i] || 0) + 1;
-        speichereStimmen(stimmen);
+        stand.stimmen[i] = (stand.stimmen[i] || 0) + 1;
+        speichereStand(stand);
       }
       return json(res, 200, { ...ergebnis(), schonAbgestimmt: schon }, {
-        "set-cookie": "abgestimmt=1; Path=/; Max-Age=43200; SameSite=Lax; Secure",
+        "set-cookie": `abgestimmt=${stand.runde}; Path=/; Max-Age=43200; SameSite=Lax; Secure`,
       });
     }
     // Zuruecksetzen nur angemeldet — vor der Generalprobe und vor dem Webinar.
     if (req.method === "DELETE") {
       if (!s) return json(res, 401, { fehler: "nicht angemeldet" });
-      speichereStimmen({});
-      return json(res, 200, { zurueckgesetzt: true });
+      speichereStand({ runde: stand.runde + 1, stimmen: {} });
+      return json(res, 200, { zurueckgesetzt: true, neueRunde: stand.runde + 1 });
     }
   }
 

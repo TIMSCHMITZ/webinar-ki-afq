@@ -130,8 +130,9 @@ document.addEventListener("click", async function(e){
     zeigeErgebnis(d);
   } else {
     zeigeOptionen(d.optionen);
-    // Wer schon abgestimmt hat, sieht direkt das Ergebnis.
-    if (document.cookie.indexOf("abgestimmt=1") !== -1) {
+    // Ob jemand schon abgestimmt hat, sagt der Server — er kennt die laufende
+    // Runde. Nach einem Zuruecksetzen darf dasselbe Geraet wieder abstimmen.
+    if (d.schonAbgestimmt) {
       el("danke").innerHTML = "<strong>Du hast schon abgestimmt.</strong> Hier ist der Zwischenstand.";
       zeigeErgebnis(d);
     }
