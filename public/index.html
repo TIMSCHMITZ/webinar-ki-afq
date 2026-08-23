@@ -63,6 +63,22 @@
   .werkzeug button{background:none;color:var(--ink-soft);border:0;padding:0;font-size:12.5px;font-family:var(--body);text-decoration:underline;cursor:pointer}
   .werkzeug button:hover{color:var(--ink)}
   .leerhinweis{color:var(--ink-soft);font-size:14.5px;line-height:1.55;text-align:center;padding:26px 8px}
+  /* --- Text ändern --- */
+  #textbereich{flex:1;overflow-y:auto;padding:14px 18px 18px}
+  .feldgruppe{margin-bottom:16px}
+  .feldgruppe label{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:5px}
+  .feldname{font-family:var(--head);font-weight:700;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-soft)}
+  .geaendert{font-size:11.5px;color:var(--accent);font-family:var(--body);text-transform:none;letter-spacing:0}
+  .feldgruppe textarea{width:100%;min-height:60px;resize:vertical;font-family:var(--body);font-size:15px;
+       line-height:1.45;color:var(--ink);background:#fff;border:2px solid var(--line);border-radius:10px;padding:10px 12px}
+  .feldgruppe textarea:focus{outline:none;border-color:var(--accent)}
+  .feldgruppe textarea.dirty{border-color:var(--accent);background:#fffdf9}
+  .feldwerkzeug{display:flex;gap:12px;margin-top:5px}
+  .feldwerkzeug button{background:none;color:var(--ink-soft);border:0;padding:0;font-size:12.5px;
+       font-family:var(--body);text-decoration:underline;cursor:pointer}
+  .feldwerkzeug button:hover{color:var(--ink)}
+  .texthinweis{background:var(--tuerkis);border-radius:10px;padding:11px 13px;font-size:13.5px;
+       line-height:1.45;color:var(--ink);margin:0 0 16px}
   .schreiben{border-top:1px solid var(--line);padding:14px 18px;background:var(--bg)}
   .schreiben textarea{min-height:74px;resize:vertical;font-size:15px}
   .schreiben .zeile{display:flex;align-items:center;gap:10px;margin-top:9px}
@@ -117,9 +133,11 @@
       <button id="tabfolie" class="aktiv">Diese Folie</button>
       <button id="taballe">Alle (<span id="anzahlalle">0</span>)</button>
       <button id="taboffen">Offen (<span id="anzahloffen">0</span>)</button>
+      <button id="tabtext">Text ändern</button>
     </div>
 
     <div id="liste"></div>
+    <div id="textbereich" hidden></div>
     <p class="stand" id="stand"></p>
 
     <form class="schreiben" id="schreibform">
@@ -201,6 +219,18 @@ const BRUECKE = `
   });
   addEventListener("load", melde);
   setTimeout(melde, 120);
+
+  // Zugriff für den Arbeitsplatz. Scripts teilen sich das globale Umfeld, deshalb
+  // sind S, deck, render, show und slides von hier aus erreichbar — auch wenn sie
+  // im Deck als const/let deklariert sind und damit nicht am window hängen.
+  window.__deck = {
+    folien: function(){ return S; },
+    neuRendern: function(){
+      deck.innerHTML = S.map(render).join("") + '<div id="bar"></div>';
+      slides = [].slice.call(deck.querySelectorAll(".slide"));
+      show(cur);
+    }
+  };
 })();
 <\/script>
 `;
@@ -221,6 +251,9 @@ async function starte() {
     // Bilder still per onerror — ohne diese Zeile fehlen sie also kommentarlos.
     const mitBruecke = html
       .replace(/<head(\s[^>]*)?>/i, (m) => m + `\n<base href="${location.origin}/">`)
+      // `const slides` verhindert, dass nach einer Textänderung neu gebunden werden
+      // kann. `let` ändert sonst nichts am Verhalten des Decks.
+      .replace("const slides = [", "let slides = [")
       .replace(/<\/body>/i, BRUECKE + "</body>");
     // Blob statt srcdoc: gleiche Herkunft wie die Seite, dadurch funktionieren
     // Vollbild und Tastatursteuerung des Decks zuverlässig. Der entschlüsselte
@@ -235,8 +268,24 @@ async function starte() {
     return;
   }
 
+  // Textänderungen erst holen, dann über das Deck legen — sonst blitzt kurz
+  // der Originaltext auf.
+  await ladeAenderungen();
+  // Das Deck baut sich im Rahmen selbst auf; kurz warten, bis __deck bereitsteht.
+  for (let i = 0; i < 40 && !deckApi(); i++) await new Promise((r) => setTimeout(r, 50));
+  wendeAenderungenAn();
+
   await ladeNotizen();
-  setInterval(ladeNotizen, 5000); // einfacher Abgleich — bei zwei Personen reicht das
+  setInterval(async () => {
+    await ladeNotizen();
+    // Änderungen der anderen Person übernehmen, aber niemandem ins Tippen fahren:
+    // im Bearbeiten-Modus bleibt die Anzeige stehen.
+    if (ANSICHT !== "text") {
+      const vorher = JSON.stringify(AENDERUNGEN);
+      await ladeAenderungen();
+      if (JSON.stringify(AENDERUNGEN) !== vorher) wendeAenderungenAn();
+    }
+  }, 5000);
 }
 
 window.addEventListener("message", (e) => {
@@ -341,13 +390,151 @@ $("text").addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter") $("schreibform").requestSubmit();
 });
 
-for (const [id, wert] of [["tabfolie", "folie"], ["taballe", "alle"], ["taboffen", "offen"]]) {
+const TABS = [["tabfolie", "folie"], ["taballe", "alle"], ["taboffen", "offen"], ["tabtext", "text"]];
+for (const [id, wert] of TABS) {
   $(id).addEventListener("click", () => {
     ANSICHT = wert;
-    for (const x of ["tabfolie", "taballe", "taboffen"]) $(x).classList.toggle("aktiv", x === id);
-    zeichne();
+    for (const [x] of TABS) $(x).classList.toggle("aktiv", x === id);
+    const textModus = wert === "text";
+    $("textbereich").hidden = !textModus;
+    $("liste").style.display = textModus ? "none" : "";
+    $("schreibform").style.display = textModus ? "none" : "";
+    if (textModus) zeichneText(); else zeichne();
   });
 }
+
+/* ============ Text ändern ============
+   Der Server kennt die Präsentation nicht (sie ist verschlüsselt). Änderungen
+   werden deshalb als Auflage gespeichert — Foliennummer, Feldpfad, neuer Wert —
+   und hier über das entschlüsselte Deck gelegt. Das Original bleibt unberührt,
+   jede Änderung ist einzeln zurücknehmbar. */
+let AENDERUNGEN = {};
+
+function deckApi() {
+  try { return $("deckframe").contentWindow.__deck || null; } catch { return null; }
+}
+
+// Alle Textfelder einer Folie einsammeln, als flache Pfadliste.
+const NICHT_BEARBEITBAR = new Set(["t", "m", "p", "img", "dark", "wrap", "accent", "stars", "qr", "chat"]);
+function felderSammeln(obj, praefix = "", tiefe = 0, raus = []) {
+  if (tiefe > 3) return raus;
+  for (const [k, v] of Object.entries(obj)) {
+    if (!praefix && NICHT_BEARBEITBAR.has(k)) continue;
+    const pfad = praefix ? `${praefix}.${k}` : k;
+    if (typeof v === "string") raus.push({ pfad, wert: v });
+    else if (Array.isArray(v)) v.forEach((x, i) => {
+      if (typeof x === "string") raus.push({ pfad: `${pfad}.${i}`, wert: x });
+      else if (x && typeof x === "object") felderSammeln(x, `${pfad}.${i}`, tiefe + 1, raus);
+    });
+    else if (v && typeof v === "object") felderSammeln(v, pfad, tiefe + 1, raus);
+  }
+  return raus;
+}
+
+// Verständliche Bezeichnung statt Feldpfad.
+const NAMEN = { h: "Überschrift", sub: "Untertitel", big: "Kernsatz", eyebrow: "Kopfzeile",
+  foot: "Fußzeile", quote: "Zitat", who: "Wer", list: "Punkt", steps: "Schritt", meta: "Angabe",
+  cards: "Karte", rows: "Zeile", head: "Spaltenkopf", items: "Punkt", bad: "Linke Spalte",
+  good: "Rechte Spalte", n: "Sprechernotiz", alt: "Bildbeschreibung" };
+function benenne(pfad) {
+  return pfad.split(".").map((teil, i, alle) => {
+    if (/^\d+$/.test(teil)) return `${Number(teil) + 1}`;
+    const name = NAMEN[teil] || teil;
+    return i && /^\d+$/.test(alle[i - 1]) ? `– ${name}` : name;
+  }).join(" ").replace(/\s+–/g, " –");
+}
+
+function setzeWert(obj, pfad, wert) {
+  const teile = pfad.split(".");
+  let o = obj;
+  for (let i = 0; i < teile.length - 1; i++) { o = o?.[teile[i]]; if (!o) return false; }
+  o[teile.at(-1)] = wert;
+  return true;
+}
+
+async function ladeAenderungen() {
+  try {
+    const r = await fetch("/api/edits");
+    if (r.ok) AENDERUNGEN = (await r.json()).aenderungen || {};
+  } catch {}
+}
+
+// Auflage über das frisch entschlüsselte Deck legen und neu zeichnen.
+function wendeAenderungenAn() {
+  const api = deckApi();
+  if (!api) return;
+  const S = api.folien();
+  let n = 0;
+  for (const [nr, felder] of Object.entries(AENDERUNGEN)) {
+    const folie = S[Number(nr) - 1];
+    if (!folie) continue;
+    for (const [pfad, eintrag] of Object.entries(felder)) {
+      if (setzeWert(folie, pfad, eintrag.wert)) n++;
+    }
+  }
+  if (n) api.neuRendern();
+}
+
+function zeichneText() {
+  const bereich = $("textbereich");
+  const api = deckApi();
+  if (!api) { bereich.innerHTML = '<p class="leerhinweis">Die Folien sind noch nicht geladen.</p>'; return; }
+  const folie = api.folien()[AKTUELLE_FOLIE - 1];
+  if (!folie) { bereich.innerHTML = '<p class="leerhinweis">Diese Folie gibt es nicht.</p>'; return; }
+
+  const felder = felderSammeln(folie);
+  const geaendert = AENDERUNGEN[AKTUELLE_FOLIE] || {};
+  bereich.innerHTML =
+    '<p class="texthinweis">Du änderst hier Folie ' + AKTUELLE_FOLIE +
+    '. Die Änderung ist sofort für beide sichtbar und lässt sich einzeln zurücknehmen.</p>' +
+    felder.map((f) => {
+      const g = geaendert[f.pfad];
+      return `<div class="feldgruppe" data-pfad="${f.pfad}">
+        <label>
+          <span class="feldname">${sicher(benenne(f.pfad))}</span>
+          ${g ? `<span class="geaendert">geändert von ${sicher(g.autor)}</span>` : ""}
+        </label>
+        <textarea rows="2" class="${g ? "dirty" : ""}">${sicher(f.wert)}</textarea>
+        <div class="feldwerkzeug">
+          <button data-tu="speichern">speichern</button>
+          ${g ? '<button data-tu="zuruecksetzen">Original wiederherstellen</button>' : ""}
+        </div>
+      </div>`;
+    }).join("");
+}
+
+$("textbereich").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-tu]");
+  if (!btn) return;
+  const gruppe = btn.closest(".feldgruppe");
+  const pfad = gruppe.dataset.pfad;
+  const feld = gruppe.querySelector("textarea");
+
+  if (btn.dataset.tu === "speichern") {
+    btn.textContent = "…";
+    const r = await fetch("/api/edits", {
+      method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ folie: AKTUELLE_FOLIE, feld: pfad, wert: feld.value }),
+    });
+    if (!r.ok) { btn.textContent = "ging nicht"; return; }
+    btn.textContent = "gespeichert ✓";
+    setTimeout(() => { btn.textContent = "speichern"; }, 1800);
+  } else {
+    // Zurücksetzen heißt: Auflage löschen und das Deck frisch aufbauen, damit
+    // der Originalwert wieder erscheint.
+    await fetch("/api/edits", {
+      method: "DELETE", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ folie: AKTUELLE_FOLIE, feld: pfad }),
+    });
+    await ladeAenderungen();
+    location.reload();
+    return;
+  }
+  await ladeAenderungen();
+  const api = deckApi();
+  if (api) { setzeWert(api.folien()[AKTUELLE_FOLIE - 1], pfad, feld.value); api.neuRendern(); }
+  zeichneText();
+});
 
 $("abmelden").addEventListener("click", async () => {
   await fetch("/api/logout", { method: "POST" });

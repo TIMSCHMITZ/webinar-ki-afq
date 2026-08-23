@@ -89,6 +89,25 @@ function speichereNotizen(liste) {
   renameSync(tmp, NOTIZEN); // atomar: nie eine halb geschriebene Datei
 }
 
+// --- Textaenderungen ---------------------------------------------------
+// Die Praesentation selbst liegt verschluesselt; der Server kann sie also gar
+// nicht anfassen. Aenderungen werden deshalb als Auflage gespeichert: je Folie
+// ein Feldpfad ("h", "list.0", "cards.1.p") mit dem neuen Wert. Der Browser
+// legt sie nach dem Entschluesseln ueber das Deck. Das Original bleibt
+// unangetastet — jede Aenderung ist einzeln ruecknehmbar.
+const AENDERUNGEN = join(DATEN, "aenderungen.json");
+function ladeAenderungen() {
+  if (!existsSync(AENDERUNGEN)) return {};
+  try { return JSON.parse(readFileSync(AENDERUNGEN, "utf8")); } catch { return {}; }
+}
+function speichereAenderungen(obj) {
+  const tmp = AENDERUNGEN + ".tmp";
+  writeFileSync(tmp, JSON.stringify(obj, null, 2));
+  renameSync(tmp, AENDERUNGEN);
+}
+// Nur einfache Feldpfade zulassen — kein __proto__, keine Tiefe ohne Ende.
+const PFAD_OK = /^[a-zA-Z]{1,20}(\.(0|[1-9][0-9]?)|\.[a-zA-Z]{1,20}){0,3}$/;
+
 // --- HTTP-Hilfen -------------------------------------------------------
 const TYPEN = {
   ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -182,6 +201,34 @@ const server = createServer(async (req, res) => {
       liste[i].geaendert = Date.now();
       speichereNotizen(liste);
       return json(res, 200, { notiz: liste[i] });
+    }
+  }
+
+  // --- Textaenderungen am Deck ---
+  if (pfad === "/api/edits") {
+    if (req.method === "GET") return json(res, 200, { aenderungen: ladeAenderungen() });
+    if (req.method === "PUT") {
+      const { folie, feld, wert } = await koerperLesen(req, 256 * 1024);
+      const nr = Number(folie);
+      if (!Number.isInteger(nr) || nr < 1 || nr > 999) return json(res, 400, { fehler: "Foliennummer ungueltig." });
+      if (typeof feld !== "string" || !PFAD_OK.test(feld)) return json(res, 400, { fehler: "Feldpfad ungueltig." });
+      if (typeof wert !== "string" || wert.length > 5000) return json(res, 400, { fehler: "Wert fehlt oder ist zu lang." });
+      const alle = ladeAenderungen();
+      const f = (alle[nr] ||= {});
+      f[feld] = { wert, autor: s.name, ts: Date.now() };
+      speichereAenderungen(alle);
+      return json(res, 200, { folie: nr, feld, gespeichert: f[feld] });
+    }
+    if (req.method === "DELETE") {
+      const { folie, feld } = await koerperLesen(req);
+      const alle = ladeAenderungen();
+      const nr = String(Number(folie));
+      if (alle[nr] && feld in alle[nr]) {
+        delete alle[nr][feld];
+        if (!Object.keys(alle[nr]).length) delete alle[nr];
+        speichereAenderungen(alle);
+      }
+      return json(res, 200, { zurueckgesetzt: true });
     }
   }
 
