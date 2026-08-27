@@ -182,6 +182,22 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { "content-type": TYPEN[".html"], "cache-control": "no-cache" });
     return res.end(html);
   }
+  // --- Bilder & Schriften: bewusst OHNE Anmeldung. Nur deck.enc ist das
+  // eigentliche Geheimnis (Skript, Preise); Fotos/Fonts sind unkritisch und
+  // muessen auch dann laden, wenn das Sitzungscookie im blob:-iFrame aus
+  // irgendeinem Browser-/Privacy-Grund nicht mitgeschickt wird (401 zeigte
+  // sonst den "Bild fehlt noch"-Platzhalter, obwohl die Datei da ist).
+  if (pfad.startsWith("/img/") || pfad.startsWith("/fonts/")) {
+    const sicher = normalize(pfad).replace(/^(\.\.[/\\])+/, "");
+    const datei = join(OEFFENTLICH, sicher);
+    if (!datei.startsWith(OEFFENTLICH) || !existsSync(datei)) {
+      return json(res, 404, { fehler: "nicht gefunden" });
+    }
+    const typ = TYPEN[extname(datei).toLowerCase()] || "application/octet-stream";
+    res.writeHead(200, { "content-type": typ, "cache-control": "public, max-age=604800" });
+    return res.end(readFileSync(datei));
+  }
+
   if (pfad === "/api/vote") {
     const stand = ladeStand();
     const meineRunde = Number(
