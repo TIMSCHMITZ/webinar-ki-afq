@@ -164,6 +164,14 @@
 const $ = (id) => document.getElementById(id);
 let ICH = null, AKTUELLE_FOLIE = 1, PASSWORT = null;
 
+// Zweites Fenster zum Teilen: ?zuschauer=1 an die URL — zeigt nur das Deck
+// (Anmerkungen bleiben aus, Notizen-Taste ist stillgelegt), folgt aber live
+// der Folie des normalen Fensters ueber einen BroadcastChannel (selbe
+// Origin, kein Server-Umweg noetig). Beide Fenster brauchen ihr eigenes
+// Login + Deck-Passwort, das Sync betrifft nur die Foliennummer.
+const ZUSCHAUER = new URLSearchParams(location.search).get("zuschauer") === "1";
+const KANAL = ("BroadcastChannel" in window) ? new BroadcastChannel("ki-chefsache-folie-sync") : null;
+
 $("loginform").addEventListener("submit", async (e) => {
   e.preventDefault();
   const btn = $("loginbtn"), fehler = $("loginfehler");
@@ -226,6 +234,11 @@ const BRUECKE = `
   });
   addEventListener("load", melde);
   setTimeout(melde, 120);
+
+  // Zuschauer-Fenster (Bildschirmfreigabe): die eigene Notizen-Taste des Decks
+  // (Taste N und der Knopf) legt interne Regie-Hinweise offen — hier stillgelegt,
+  // falls versehentlich gedrückt/geklickt.
+  if (parent.ZUSCHAUER) window.toggleNotes = function(){};
 
   // Zugriff für den Arbeitsplatz. Scripts teilen sich das globale Umfeld, deshalb
   // sind S, deck, render, show und slides von hier aus erreichbar — auch wenn sie
@@ -312,8 +325,17 @@ window.addEventListener("message", (e) => {
     $("folietitel").textContent = "Folie " + AKTUELLE_FOLIE;
     $("zielhinweis").textContent = "wird an Folie " + AKTUELLE_FOLIE + " gehängt";
     if (ANSICHT === "folie") zeichne();
+    // Normales Fenster meldet jede Folie ans Zuschauer-Fenster weiter.
+    if (KANAL && !ZUSCHAUER) KANAL.postMessage(AKTUELLE_FOLIE);
   }
 });
+// Zuschauer-Fenster: eingehende Foliennummer direkt ins eigene Deck spiegeln.
+if (KANAL && ZUSCHAUER) {
+  KANAL.addEventListener("message", (e) => {
+    const rahmen = $("deckframe");
+    if (rahmen && rahmen.contentWindow) rahmen.contentWindow.postMessage({ typ: "gehe", nr: e.data }, "*");
+  });
+}
 
 /* ============ Anmerkungen ============ */
 let NOTIZEN = [], ANSICHT = "folie";
@@ -580,15 +602,23 @@ $("abmelden").addEventListener("click", async () => {
 
 // Anmerkungsfenster ausblenden — fuer den Live-Vortrag, wenn die Seite
 // geteilt/vorgefuehrt wird. Merkt sich den Zustand nur fuer diesen Tab.
-if (sessionStorage.getItem("anmerkungenZu") === "1") $("arbeit").classList.add("zu");
-$("ausblenden").addEventListener("click", () => {
-  $("arbeit").classList.add("zu");
-  sessionStorage.setItem("anmerkungenZu", "1");
-});
-$("wiedereinblenden").addEventListener("click", () => {
-  $("arbeit").classList.remove("zu");
-  sessionStorage.removeItem("anmerkungenZu");
-});
+if (ZUSCHAUER || sessionStorage.getItem("anmerkungenZu") === "1") $("arbeit").classList.add("zu");
+if (ZUSCHAUER) {
+  // Zuschauer-Fenster ist ausschliesslich zum Teilen da — Knoepfe, die das
+  // Anmerkungsfenster (mit internen Regie-Hinweisen) wieder zeigen wuerden,
+  // gibt es hier gar nicht erst.
+  $("ausblenden").remove();
+  $("wiedereinblenden").remove();
+} else {
+  $("ausblenden").addEventListener("click", () => {
+    $("arbeit").classList.add("zu");
+    sessionStorage.setItem("anmerkungenZu", "1");
+  });
+  $("wiedereinblenden").addEventListener("click", () => {
+    $("arbeit").classList.remove("zu");
+    sessionStorage.removeItem("anmerkungenZu");
+  });
+}
 </script>
 </body>
 </html>
