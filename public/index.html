@@ -238,7 +238,12 @@ const BRUECKE = `
   // Zuschauer-Fenster (Bildschirmfreigabe): die eigene Notizen-Taste des Decks
   // (Taste N und der Knopf) legt interne Regie-Hinweise offen — hier stillgelegt,
   // falls versehentlich gedrückt/geklickt.
-  if (parent.ZUSCHAUER) window.toggleNotes = function(){};
+  if (parent.ZUSCHAUER) {
+    window.toggleNotes = function(){};
+    var hud = document.getElementById('hud'), hilfe = document.getElementById('help');
+    if (hud) hud.style.display = 'none';
+    if (hilfe) hilfe.style.display = 'none';
+  }
 
   // Zugriff für den Arbeitsplatz. Scripts teilen sich das globale Umfeld, deshalb
   // sind S, deck, render, show und slides von hier aus erreichbar — auch wenn sie
